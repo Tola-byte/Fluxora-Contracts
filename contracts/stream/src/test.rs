@@ -467,3 +467,416 @@ fn test_multiple_streams_independent() {
     assert_eq!(s0.status, StreamStatus::Cancelled);
     assert_eq!(s1.status, StreamStatus::Active);
 }
+
+// ---------------------------------------------------------------------------
+// Additional Tests — create_stream (enhanced coverage)
+// ---------------------------------------------------------------------------
+
+/// Test creating a stream with negative deposit amount panics
+#[test]
+#[should_panic(expected = "deposit_amount must be positive")]
+fn test_create_stream_negative_deposit_panics() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+    ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &-100_i128, // negative deposit
+        &1_i128,
+        &0u64,
+        &0u64,
+        &1000u64,
+    );
+}
+
+/// Test creating a stream with zero rate_per_second panics
+#[test]
+#[should_panic(expected = "rate_per_second must be positive")]
+fn test_create_stream_zero_rate_panics() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+    ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &0_i128, // zero rate
+        &0u64,
+        &0u64,
+        &1000u64,
+    );
+}
+
+/// Test creating a stream with negative rate_per_second panics
+#[test]
+#[should_panic(expected = "rate_per_second must be positive")]
+fn test_create_stream_negative_rate_panics() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+    ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &-5_i128, // negative rate
+        &0u64,
+        &0u64,
+        &1000u64,
+    );
+}
+
+/// Test creating a stream where start_time equals end_time panics
+#[test]
+#[should_panic(expected = "start_time must be before end_time")]
+fn test_create_stream_equal_start_end_times_panics() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+    ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &1_i128,
+        &500u64,
+        &500u64,
+        &500u64, // start == end
+    );
+}
+
+/// Test creating a stream with cliff_time before start_time panics
+#[test]
+#[should_panic(expected = "cliff_time must be within [start_time, end_time]")]
+fn test_create_stream_cliff_before_start_panics() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+    ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &1_i128,
+        &100u64, // start_time
+        &50u64,  // cliff before start
+        &1000u64,
+    );
+}
+
+/// Test creating a stream with cliff_time after end_time panics
+#[test]
+#[should_panic(expected = "cliff_time must be within [start_time, end_time]")]
+fn test_create_stream_cliff_after_end_panics() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+    ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &1_i128,
+        &0u64,
+        &1500u64, // cliff after end
+        &1000u64,
+    );
+}
+
+/// Test creating a stream with cliff_time equal to start_time (valid edge case)
+#[test]
+fn test_create_stream_cliff_equals_start() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    let stream_id = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &1_i128,
+        &100u64,
+        &100u64, // cliff == start (valid)
+        &1100u64,
+    );
+
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.cliff_time, 100);
+    assert_eq!(state.start_time, 100);
+    assert_eq!(state.status, StreamStatus::Active);
+}
+
+/// Test creating a stream with cliff_time equal to end_time (valid edge case)
+#[test]
+fn test_create_stream_cliff_equals_end() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    let stream_id = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &1_i128,
+        &0u64,
+        &1000u64, // cliff == end (valid)
+        &1000u64,
+    );
+
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.cliff_time, 1000);
+    assert_eq!(state.end_time, 1000);
+    assert_eq!(state.status, StreamStatus::Active);
+}
+
+/// Test creating multiple streams increments stream_id correctly
+#[test]
+fn test_create_stream_increments_id_correctly() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    let id0 = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &100_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &100u64,
+    );
+
+    let id1 = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &200_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &200u64,
+    );
+
+    let id2 = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &300_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &300u64,
+    );
+
+    assert_eq!(id0, 0);
+    assert_eq!(id1, 1);
+    assert_eq!(id2, 2);
+
+    // Verify each stream has correct data
+    let s0 = ctx.client().get_stream_state(&id0);
+    let s1 = ctx.client().get_stream_state(&id1);
+    let s2 = ctx.client().get_stream_state(&id2);
+
+    assert_eq!(s0.deposit_amount, 100);
+    assert_eq!(s1.deposit_amount, 200);
+    assert_eq!(s2.deposit_amount, 300);
+}
+
+/// Test creating a stream with very large deposit amount
+#[test]
+fn test_create_stream_large_deposit() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    // Mint large amount to sender
+    let sac = StellarAssetClient::new(&ctx.env, &ctx.token_id);
+    sac.mint(&ctx.sender, &1_000_000_000_i128);
+
+    let large_amount = 1_000_000_i128;
+    let stream_id = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &large_amount,
+        &1000_i128,
+        &0u64,
+        &0u64,
+        &1000u64,
+    );
+
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.deposit_amount, large_amount);
+    assert_eq!(ctx.token().balance(&ctx.contract_id), large_amount);
+}
+
+/// Test creating a stream with very high rate_per_second
+#[test]
+fn test_create_stream_high_rate() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    let high_rate = 1000_i128;
+    let stream_id = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &5000_i128,
+        &high_rate,
+        &0u64,
+        &0u64,
+        &10u64, // short duration with high rate
+    );
+
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.rate_per_second, high_rate);
+    assert_eq!(state.status, StreamStatus::Active);
+}
+
+/// Test creating a stream with different sender and recipient
+#[test]
+fn test_create_stream_different_addresses() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    let another_recipient = Address::generate(&ctx.env);
+
+    let stream_id = ctx.client().create_stream(
+        &ctx.sender,
+        &another_recipient,
+        &500_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &500u64,
+    );
+
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.sender, ctx.sender);
+    assert_eq!(state.recipient, another_recipient);
+}
+
+/// Test creating a stream with future start_time
+#[test]
+fn test_create_stream_future_start_time() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    let stream_id = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &1_i128,
+        &1000u64, // starts in the future
+        &1000u64,
+        &2000u64,
+    );
+
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.start_time, 1000);
+    assert_eq!(state.end_time, 2000);
+    assert_eq!(state.status, StreamStatus::Active);
+}
+
+/// Test token balance changes after creating stream
+#[test]
+fn test_create_stream_token_balances() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    let sender_balance_before = ctx.token().balance(&ctx.sender);
+    let contract_balance_before = ctx.token().balance(&ctx.contract_id);
+    let recipient_balance_before = ctx.token().balance(&ctx.recipient);
+
+    let deposit = 2500_i128;
+    ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &deposit,
+        &5_i128,
+        &0u64,
+        &0u64,
+        &500u64,
+    );
+
+    // Sender balance should decrease by deposit
+    assert_eq!(
+        ctx.token().balance(&ctx.sender),
+        sender_balance_before - deposit
+    );
+
+    // Contract balance should increase by deposit
+    assert_eq!(
+        ctx.token().balance(&ctx.contract_id),
+        contract_balance_before + deposit
+    );
+
+    // Recipient balance should remain unchanged (no withdrawal yet)
+    assert_eq!(
+        ctx.token().balance(&ctx.recipient),
+        recipient_balance_before
+    );
+}
+
+/// Test creating stream with minimum valid duration (1 second)
+#[test]
+fn test_create_stream_minimum_duration() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    let stream_id = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &100_i128,
+        &100_i128,
+        &0u64,
+        &0u64,
+        &1u64, // 1 second duration
+    );
+
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.end_time - state.start_time, 1);
+    assert_eq!(state.status, StreamStatus::Active);
+}
+
+/// Test creating stream verifies all stream fields are set correctly
+#[test]
+fn test_create_stream_all_fields_correct() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    let deposit = 5000_i128;
+    let rate = 10_i128;
+    let start = 100u64;
+    let cliff = 200u64;
+    let end = 600u64;
+
+    let stream_id = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &deposit,
+        &rate,
+        &start,
+        &cliff,
+        &end,
+    );
+
+    let state = ctx.client().get_stream_state(&stream_id);
+
+    assert_eq!(state.stream_id, stream_id);
+    assert_eq!(state.sender, ctx.sender);
+    assert_eq!(state.recipient, ctx.recipient);
+    assert_eq!(state.deposit_amount, deposit);
+    assert_eq!(state.rate_per_second, rate);
+    assert_eq!(state.start_time, start);
+    assert_eq!(state.cliff_time, cliff);
+    assert_eq!(state.end_time, end);
+    assert_eq!(state.withdrawn_amount, 0);
+    assert_eq!(state.status, StreamStatus::Active);
+}
+
+/// Test creating stream with same sender and recipient (self-stream)
+#[test]
+fn test_create_stream_self_stream() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    // Create stream where sender is also recipient
+    let stream_id = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.sender, // same as sender
+        &1000_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &1000u64,
+    );
+
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.sender, ctx.sender);
+    assert_eq!(state.recipient, ctx.sender);
+    assert_eq!(state.status, StreamStatus::Active);
+}
