@@ -5,7 +5,7 @@ use soroban_sdk::{
     log,
     testutils::{Address as _, Ledger},
     token::{Client as TokenClient, StellarAssetClient},
-    Address, Env, IntoVal,
+    Address, Env,
 };
 
 use crate::{FluxoraStream, FluxoraStreamClient, StreamStatus};
