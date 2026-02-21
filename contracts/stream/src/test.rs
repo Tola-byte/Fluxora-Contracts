@@ -67,7 +67,6 @@ impl TestContext {
         TokenClient::new(&self.env, &self.token_id)
     }
 
-
     /// Create a standard 1000-unit stream spanning 1000 seconds (rate 1/s, no cliff).
     fn create_default_stream(&self) -> u64 {
         self.env.ledger().set_timestamp(0);
@@ -664,7 +663,7 @@ fn test_withdraw_requires_recipient_authorization() {
     // Verify the withdrawal was recorded
     let state = ctx.client().get_stream_state(&stream_id);
     assert_eq!(state.withdrawn_amount, 500);
-    
+
     // The require_auth() call in withdraw() ensures that only the recipient
     // can authorize this call, which is equivalent to checking env.invoker() == recipient
 }
