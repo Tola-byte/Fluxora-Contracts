@@ -62,7 +62,7 @@ impl<'a> TestContext<'a> {
         }
     }
 
-    /// Setup context without mock_all_auths(), for explicit auth testing 
+    /// Setup context without mock_all_auths(), for explicit auth testing
     fn setup_strict() -> Self {
         let env = Env::default();
 
