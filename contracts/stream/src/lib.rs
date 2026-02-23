@@ -310,12 +310,15 @@ impl FluxoraStream {
     pub fn pause_stream(env: Env, stream_id: u64) -> Result<(), ContractError> {
         let mut stream = load_stream(&env, stream_id)?;
 
-        // Corrected Auth Check
         Self::require_sender_or_admin(&env, &stream.sender);
+
+        if stream.status == StreamStatus::Paused {
+            panic!("stream is already paused");
+        }
 
         assert!(
             stream.status == StreamStatus::Active,
-            "stream is not active"
+            "stream must be active to pause"
         );
 
         stream.status = StreamStatus::Paused;
@@ -526,16 +529,8 @@ impl FluxoraStream {
 
         stream.withdrawn_amount += withdrawable;
 
-        // // If the full deposit has been streamed and withdrawn, mark completed
-        // let now = env.ledger().timestamp();
-        // if stream.status == StreamStatus::Active
-        //     && now >= stream.end_time
-        //     && stream.withdrawn_amount == stream.deposit_amount
-        // {
-        //     stream.status = StreamStatus::Completed;
-        // }
-
-        if stream.withdrawn_amount >= stream.deposit_amount {
+        // If the full deposit has been streamed and withdrawn, mark completed.
+        if stream.withdrawn_amount == stream.deposit_amount {
             stream.status = StreamStatus::Completed;
         }
 

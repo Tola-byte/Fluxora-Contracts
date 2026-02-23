@@ -140,7 +140,7 @@
   "ledger": {
     "protocol_version": 21,
     "sequence_number": 0,
-    "timestamp": 0,
+    "timestamp": 1000,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
     "min_persistent_entry_ttl": 4096,
@@ -1348,7 +1348,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "pause_stream"
+                "symbol": "withdraw"
               }
             ],
             "data": {
@@ -1374,7 +1374,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'stream is already paused' from contract function 'Symbol(obj#335)'"
+                  "string": "caught panic 'cannot withdraw from paused stream' from contract function 'Symbol(withdraw)'"
                 },
                 {
                   "u64": 0
@@ -1434,7 +1434,7 @@
                   "string": "contract call failed"
                 },
                 {
-                  "symbol": "pause_stream"
+                  "symbol": "withdraw"
                 },
                 {
                   "vec": [
