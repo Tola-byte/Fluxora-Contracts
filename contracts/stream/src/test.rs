@@ -2192,7 +2192,7 @@ fn test_withdraw_no_overflow_max_values() {
 
     // Verify withdrawal is valid and non-negative
     assert!(withdrawn > 0);
-    assert!(withdrawn <= i128::MAX - 1);
+    assert!(withdrawn < i128::MAX);
 
     let state = ctx.client().get_stream_state(&stream_id);
     assert!(state.withdrawn_amount <= state.deposit_amount);
@@ -2392,11 +2392,11 @@ fn test_withdraw_small_rate_no_underflow() {
     let stream_id = ctx.client().create_stream(
         &ctx.sender,
         &ctx.recipient,
-        &100_i128,  // deposit 100 tokens
-        &1_i128,    // rate 1 token/second
+        &100_i128, // deposit 100 tokens
+        &1_i128,   // rate 1 token/second
         &0u64,
         &0u64,
-        &100u64,    // 100 seconds for 100 tokens total
+        &100u64, // 100 seconds for 100 tokens total
     );
 
     // At t=50, accrued should be 50 tokens
@@ -2449,7 +2449,7 @@ fn test_withdraw_after_cancel_then_completed() {
     assert_eq!(withdrawn, 600);
 
     let state = ctx.client().get_stream_state(&stream_id);
-    // After withdrawing all accrued from a cancelled stream, 
+    // After withdrawing all accrued from a cancelled stream,
     // withdrawn_amount equals the accrued amount at cancellation
     assert_eq!(state.withdrawn_amount, 600);
     // Status remains Cancelled (not Completed) because stream was terminated early
