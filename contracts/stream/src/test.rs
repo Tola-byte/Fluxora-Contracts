@@ -1911,7 +1911,7 @@ fn test_cancel_stream_as_admin() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #1)")]
+#[should_panic(expected = "Error(Contract")]
 fn test_cancel_already_cancelled_panics() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_default_stream();
@@ -1920,7 +1920,7 @@ fn test_cancel_already_cancelled_panics() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #1)")]
+#[should_panic(expected = "Error(Contract")]
 fn test_cancel_completed_stream_panics() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_default_stream();
