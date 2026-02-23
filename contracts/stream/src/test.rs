@@ -1394,7 +1394,7 @@ fn test_admin_can_resume_stream() {
 }
 
 #[test]
-#[should_panic(expected = "stream is not active")]
+#[should_panic(expected = "stream is already paused")]
 fn test_pause_already_paused_panics() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_default_stream();
@@ -1431,6 +1431,15 @@ fn test_resume_cancelled_stream_panics() {
     let state = ctx.client().get_stream_state(&stream_id);
     assert_eq!(state.status, StreamStatus::Cancelled);
     ctx.client().resume_stream(&stream_id);
+}
+
+#[test]
+#[should_panic(expected = "stream must be active to pause")]
+fn test_pause_cancelled_stream_panics() {
+    let ctx = TestContext::setup();
+    let stream_id = ctx.create_default_stream();
+    ctx.client().cancel_stream(&stream_id);
+    ctx.client().pause_stream(&stream_id); // Cancelled — must panic with general message
 }
 
 // ---------------------------------------------------------------------------
