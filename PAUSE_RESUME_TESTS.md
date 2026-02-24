@@ -252,4 +252,4 @@ The pause/resume/withdraw lifecycle is fully tested and verified to work correct
 - ✅ No existing tests broken (152/152 unit tests pass)
 - ✅ Test coverage remains above 95%
 
-The implementation is production-ready and secure.
+The implementation is currently covered by the tests described above and passes all current test suites on this branch.
