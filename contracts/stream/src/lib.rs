@@ -413,13 +413,14 @@ impl FluxoraStream {
         let accrued = Self::calculate_accrued(env.clone(), stream_id);
         let unstreamed = stream.deposit_amount - accrued;
 
+        // CEI: update state before external token transfer to reduce reentrancy risk.
+        stream.status = StreamStatus::Cancelled;
+        save_stream(&env, &stream);
+
         if unstreamed > 0 {
             let token_client = token::Client::new(&env, &get_token(&env));
             token_client.transfer(&env.current_contract_address(), &stream.sender, &unstreamed);
         }
-
-        stream.status = StreamStatus::Cancelled;
-        save_stream(&env, &stream);
 
         env.events().publish(
             (symbol_short!("cancelled"), stream_id),
@@ -496,6 +497,13 @@ impl FluxoraStream {
         let withdrawable = accrued - stream.withdrawn_amount;
         assert!(withdrawable > 0, "nothing to withdraw");
 
+        // CEI: update state before external token transfer to reduce reentrancy risk.
+        stream.withdrawn_amount += withdrawable;
+        if stream.withdrawn_amount == stream.deposit_amount {
+            stream.status = StreamStatus::Completed;
+        }
+        save_stream(&env, &stream);
+
         let token_client = token::Client::new(&env, &get_token(&env));
         token_client.transfer(
             &env.current_contract_address(),
@@ -503,14 +511,6 @@ impl FluxoraStream {
             &withdrawable,
         );
 
-        stream.withdrawn_amount += withdrawable;
-
-        // If the full deposit has been streamed and withdrawn, mark completed.
-        if stream.withdrawn_amount == stream.deposit_amount {
-            stream.status = StreamStatus::Completed;
-        }
-
-        save_stream(&env, &stream);
         env.events()
             .publish((symbol_short!("withdrew"), stream_id), withdrawable);
         withdrawable
@@ -682,13 +682,14 @@ impl FluxoraStream {
         let accrued = Self::calculate_accrued(env.clone(), stream_id);
         let unstreamed = stream.deposit_amount - accrued;
 
+        // CEI: update state before external token transfer to reduce reentrancy risk.
+        stream.status = StreamStatus::Cancelled;
+        save_stream(&env, &stream);
+
         if unstreamed > 0 {
             let token_client = token::Client::new(&env, &get_token(&env));
             token_client.transfer(&env.current_contract_address(), &stream.sender, &unstreamed);
         }
-
-        stream.status = StreamStatus::Cancelled;
-        save_stream(&env, &stream);
 
         env.events().publish(
             (symbol_short!("cancelled"), stream_id),
