@@ -604,10 +604,61 @@ impl FluxoraStream {
     /// # Usage Notes
     /// - This is a view function (read-only, no state changes)
     /// - No authorization required (public information)
-    /// - Config is set once during `init()` and cannot be changed
+    /// - Config is set once during `init()` and can be updated via `set_admin()`
     /// - Useful for integrators to verify token and admin addresses
     pub fn get_config(env: Env) -> Config {
         get_config(&env)
+    }
+
+    /// Update the admin address for the contract.
+    ///
+    /// Allows the current admin to rotate the admin key by setting a new admin address.
+    /// This enables key rotation without redeploying the contract. Only the current admin
+    /// may call this function.
+    ///
+    /// # Parameters
+    /// - `new_admin`: The new admin address that will replace the current admin
+    ///
+    /// # Authorization
+    /// - Requires authorization from the current admin address
+    ///
+    /// # Panics
+    /// - If the contract has not been initialized (missing config)
+    /// - If caller is not the current admin
+    ///
+    /// # State Changes
+    /// - Updates the admin address in the Config stored in instance storage
+    /// - Token address remains unchanged
+    ///
+    /// # Events
+    /// - Publishes `admin_updated(old_admin, new_admin)` event on success
+    ///
+    /// # Usage Notes
+    /// - This is a security-critical function for admin key rotation
+    /// - The new admin immediately gains all administrative privileges
+    /// - The old admin immediately loses all administrative privileges
+    /// - No restrictions on the new admin address (can be any valid address)
+    /// - Can be called multiple times to rotate keys as needed
+    ///
+    /// # Examples
+    /// - Rotate to a new admin key: `set_admin(env, new_admin_address)`
+    /// - Transfer admin to a multisig: `set_admin(env, multisig_address)`
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let mut config = get_config(&env);
+        let old_admin = config.admin.clone();
+
+        // Only current admin can update admin
+        old_admin.require_auth();
+
+        // Update admin in config
+        config.admin = new_admin.clone();
+        env.storage().instance().set(&DataKey::Config, &config);
+
+        // Emit event with old and new admin addresses
+        env.events().publish(
+            (symbol_short!("admin"), symbol_short!("updated")),
+            (old_admin, new_admin),
+        );
     }
 
     /// Retrieve the complete state of a payment stream.
