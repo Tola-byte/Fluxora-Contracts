@@ -13,6 +13,7 @@ use crate::{FluxoraStream, FluxoraStreamClient, StreamEvent, StreamStatus};
 // Test helpers
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 struct TestContext<'a> {
     env: Env,
     contract_id: Address,
