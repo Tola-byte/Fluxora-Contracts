@@ -4365,29 +4365,28 @@ fn test_stream_id_stability_after_state_changes() {
 #[test]
 fn test_cancel_stream_from_paused_state() {
     let ctx = TestContext::setup();
-    
-    // 1. Create a 1000 token / 1000 second stream
+
     let stream_id = ctx.create_default_stream();
 
-    // 2. Advance time halfway (500 seconds)
     ctx.env.ledger().set_timestamp(500);
 
-    // 3. Pause stream
     ctx.client().pause_stream(&stream_id);
-    assert_eq!(ctx.client().get_stream_state(&stream_id).status, StreamStatus::Paused);
+    assert_eq!(
+        ctx.client().get_stream_state(&stream_id).status,
+        StreamStatus::Paused
+    );
 
-    // 4. Cancel stream while it is Paused
     let sender_balance_before = ctx.token().balance(&ctx.sender);
     ctx.client().cancel_stream(&stream_id);
-    
-    // Verify it changed to Cancelled
-    assert_eq!(ctx.client().get_stream_state(&stream_id).status, StreamStatus::Cancelled);
 
-    // 5. Verify refund (Unstreamed = 500)
+    assert_eq!(
+        ctx.client().get_stream_state(&stream_id).status,
+        StreamStatus::Cancelled
+    );
+
     let sender_balance_after = ctx.token().balance(&ctx.sender);
     assert_eq!(sender_balance_after - sender_balance_before, 500);
 
-    // 6. Verify recipient can still withdraw the accrued 500
     assert_eq!(ctx.token().balance(&ctx.recipient), 0);
     ctx.client().withdraw(&stream_id);
     assert_eq!(ctx.token().balance(&ctx.recipient), 500);
