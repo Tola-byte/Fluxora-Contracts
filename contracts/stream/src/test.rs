@@ -3283,10 +3283,10 @@ fn test_create_stream_self_stream_panics() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic(expected = "stream not found")]
 fn test_get_stream_state_non_existent() {
     let ctx = TestContext::setup();
-    ctx.client().get_stream_state(&999);
+    let result = ctx.client().try_get_stream_state(&999);
+    assert!(result.is_err());
 }
 
 #[test]
@@ -4073,11 +4073,71 @@ fn test_get_stream_state_pause_resume_stream_cancel() {
 }
 
 #[test]
-#[should_panic(expected = "stream not found")]
 fn test_get_stream_state_non_existence_stream() {
     let ctx = TestContext::setup();
     ctx.env.ledger().set_timestamp(0);
-    let _ = ctx.client().get_stream_state(&1);
+    let result = ctx.client().try_get_stream_state(&1);
+    assert!(result.is_err());
+}
+
+// ---------------------------------------------------------------------------
+// Tests — Error API (StreamNotFound)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_pause_stream_not_found() {
+    let ctx = TestContext::setup();
+    let result = ctx.client().try_pause_stream(&999);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_resume_stream_not_found() {
+    let ctx = TestContext::setup();
+    let result = ctx.client().try_resume_stream(&999);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_cancel_stream_not_found() {
+    let ctx = TestContext::setup();
+    let result = ctx.client().try_cancel_stream(&999);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_withdraw_stream_not_found() {
+    let ctx = TestContext::setup();
+    let result = ctx.client().try_withdraw(&999);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_calculate_accrued_stream_not_found() {
+    let ctx = TestContext::setup();
+    let result = ctx.client().try_calculate_accrued(&999);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_cancel_stream_as_admin_not_found() {
+    let ctx = TestContext::setup();
+    let result = ctx.client().try_cancel_stream_as_admin(&999);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_pause_stream_as_admin_not_found() {
+    let ctx = TestContext::setup();
+    let result = ctx.client().try_pause_stream_as_admin(&999);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_resume_stream_as_admin_not_found() {
+    let ctx = TestContext::setup();
+    let result = ctx.client().try_resume_stream_as_admin(&999);
+    assert!(result.is_err());
 }
 
 // ---------------------------------------------------------------------------

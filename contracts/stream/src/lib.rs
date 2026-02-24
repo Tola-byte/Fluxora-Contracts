@@ -25,6 +25,13 @@ pub enum StreamStatus {
     Cancelled = 3,
 }
 
+#[soroban_sdk::contracterror]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum ContractError {
+    StreamNotFound = 1,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StreamEvent {
@@ -86,11 +93,11 @@ fn set_stream_count(env: &Env, count: u64) {
     env.storage().instance().set(&DataKey::NextStreamId, &count);
 }
 
-fn load_stream(env: &Env, stream_id: u64) -> Stream {
+fn load_stream(env: &Env, stream_id: u64) -> Result<Stream, ContractError> {
     env.storage()
         .persistent()
         .get(&DataKey::Stream(stream_id))
-        .expect("stream not found")
+        .ok_or(ContractError::StreamNotFound)
 }
 
 fn save_stream(env: &Env, stream: &Stream) {
@@ -274,20 +281,34 @@ impl FluxoraStream {
         stream_id
     }
 
-    /// Pause an active stream. Only the sender or admin may call this.
+    /// Pause an active payment stream.
     ///
-    /// ## Errors / Panics
-    /// - Panics with `"stream is already paused"` if the stream is already in
-    ///   `Paused` state. This is a clear, distinct error to aid frontend/backend
-    ///   consumers in diagnosing double-pause scenarios.
-    /// - Panics with `"stream must be active to pause"` if the stream is in any
-    ///   other non-`Active` state (`Completed` or `Cancelled`).
+    /// Temporarily halts withdrawals from the stream while preserving accrual calculations.
+    /// The stream can be resumed later by the sender or admin. Accrual continues based on
+    /// time elapsed, but the recipient cannot withdraw while paused.
     ///
-    /// ## Consistency with `resume_stream`
-    /// `resume_stream` mirrors this behaviour: it panics with
-    /// `"stream is not paused"` when called on a non-`Paused` stream.
-    pub fn pause_stream(env: Env, stream_id: u64) {
-        let mut stream = load_stream(&env, stream_id);
+    /// # Parameters
+    /// - `stream_id`: Unique identifier of the stream to pause
+    ///
+    /// # Authorization
+    /// - Requires authorization from the stream's sender (original creator)
+    /// - Admin can use `pause_stream_as_admin` for administrative override
+    ///
+    /// # Panics
+    /// - If the stream is not in `Active` state (already paused, completed, or cancelled)
+    /// - If the stream does not exist (`stream_id` is invalid)
+    /// - If caller is not authorized (not the sender)
+    ///
+    /// # Events
+    /// - Publishes `Paused(stream_id)` event on success
+    ///
+    /// # Usage Notes
+    /// - Pausing does not affect accrual calculations (time-based)
+    /// - Recipient cannot withdraw while stream is paused
+    /// - Stream can be cancelled while paused
+    /// - Use `resume_stream` to reactivate withdrawals
+    pub fn pause_stream(env: Env, stream_id: u64) -> Result<(), ContractError> {
+        let mut stream = load_stream(&env, stream_id)?;
 
         Self::require_sender_or_admin(&env, &stream.sender);
 
@@ -307,6 +328,7 @@ impl FluxoraStream {
             (symbol_short!("paused"), stream_id),
             StreamEvent::Paused(stream_id),
         );
+        Ok(())
     }
 
     /// Resume a paused payment stream.
@@ -336,8 +358,8 @@ impl FluxoraStream {
     /// - Only paused streams can be resumed
     /// - Accrual calculations are time-based and unaffected by pause/resume
     /// - After resume, recipient can immediately withdraw accrued funds
-    pub fn resume_stream(env: Env, stream_id: u64) {
-        let mut stream = load_stream(&env, stream_id);
+    pub fn resume_stream(env: Env, stream_id: u64) -> Result<(), ContractError> {
+        let mut stream = load_stream(&env, stream_id)?;
         Self::require_sender_or_admin(&env, &stream.sender);
 
         match stream.status {
@@ -354,6 +376,7 @@ impl FluxoraStream {
             (symbol_short!("resumed"), stream_id),
             StreamEvent::Resumed(stream_id),
         );
+        Ok(())
     }
 
     /// Cancel a payment stream and refund unstreamed funds to the sender.
@@ -401,8 +424,8 @@ impl FluxoraStream {
     /// - Cancel at 30% completion → sender gets 70% refund, recipient can withdraw 30%
     /// - Cancel at 100% completion → sender gets 0% refund, recipient can withdraw 100%
     /// - Cancel before cliff → sender gets 100% refund (no accrual before cliff)
-    pub fn cancel_stream(env: Env, stream_id: u64) {
-        let mut stream = load_stream(&env, stream_id);
+    pub fn cancel_stream(env: Env, stream_id: u64) -> Result<(), ContractError> {
+        let mut stream = load_stream(&env, stream_id)?;
         Self::require_sender_or_admin(&env, &stream.sender);
 
         assert!(
@@ -410,7 +433,7 @@ impl FluxoraStream {
             "stream must be active or paused to cancel"
         );
 
-        let accrued = Self::calculate_accrued(env.clone(), stream_id);
+        let accrued = Self::calculate_accrued(env.clone(), stream_id)?;
         let unstreamed = stream.deposit_amount - accrued;
 
         if unstreamed > 0 {
@@ -425,6 +448,7 @@ impl FluxoraStream {
             (symbol_short!("cancelled"), stream_id),
             StreamEvent::Cancelled(stream_id),
         );
+        Ok(())
     }
 
     /// Withdraw accrued tokens from a payment stream to the recipient.
@@ -473,8 +497,8 @@ impl FluxoraStream {
     /// - At t=300: withdraw() returns 300 tokens
     /// - At t=800: withdraw() returns 500 tokens (800 - 300 already withdrawn)
     /// - At t=1000: withdraw() returns 200 tokens, status → Completed
-    pub fn withdraw(env: Env, stream_id: u64) -> i128 {
-        let mut stream = load_stream(&env, stream_id);
+    pub fn withdraw(env: Env, stream_id: u64) -> Result<i128, ContractError> {
+        let mut stream = load_stream(&env, stream_id)?;
 
         // Enforce recipient-only authorization: only the stream's recipient can withdraw
         // This is equivalent to checking env.invoker() == stream.recipient
@@ -492,7 +516,7 @@ impl FluxoraStream {
             "cannot withdraw from paused stream"
         );
 
-        let accrued = Self::calculate_accrued(env.clone(), stream_id);
+        let accrued = Self::calculate_accrued(env.clone(), stream_id)?;
         let withdrawable = accrued - stream.withdrawn_amount;
         assert!(withdrawable > 0, "nothing to withdraw");
 
@@ -513,7 +537,7 @@ impl FluxoraStream {
         save_stream(&env, &stream);
         env.events()
             .publish((symbol_short!("withdrew"), stream_id), withdrawable);
-        withdrawable
+        Ok(withdrawable)
     }
 
     /// Calculate the total amount accrued to the recipient at the current time.
@@ -550,18 +574,18 @@ impl FluxoraStream {
     /// - At t=500: returns 500 (at cliff, accrual from start_time)
     /// - At t=800: returns 800
     /// - At t=1500: returns 1000 (capped at deposit_amount)
-    pub fn calculate_accrued(env: Env, stream_id: u64) -> i128 {
-        let stream = load_stream(&env, stream_id);
+    pub fn calculate_accrued(env: Env, stream_id: u64) -> Result<i128, ContractError> {
+        let stream = load_stream(&env, stream_id)?;
         let now = env.ledger().timestamp();
 
-        accrual::calculate_accrued_amount(
+        Ok(accrual::calculate_accrued_amount(
             stream.start_time,
             stream.cliff_time,
             stream.end_time,
             stream.rate_per_second,
             stream.deposit_amount,
             now,
-        )
+        ))
     }
 
     /// Retrieve the global contract configuration.
@@ -620,7 +644,7 @@ impl FluxoraStream {
     ///   - `Paused`: Temporarily halted, no withdrawals allowed
     ///   - `Completed`: All tokens withdrawn, terminal state
     ///   - `Cancelled`: Terminated early, unstreamed tokens refunded, terminal state
-    pub fn get_stream_state(env: Env, stream_id: u64) -> Stream {
+    pub fn get_stream_state(env: Env, stream_id: u64) -> Result<Stream, ContractError> {
         load_stream(&env, stream_id)
     }
 
@@ -668,18 +692,18 @@ impl FluxoraStream {
     /// - Use for emergency situations or dispute resolution
     /// - Sender still receives refund of unstreamed tokens
     /// - Recipient can still withdraw accrued amount
-    pub fn cancel_stream_as_admin(env: Env, stream_id: u64) {
+    pub fn cancel_stream_as_admin(env: Env, stream_id: u64) -> Result<(), ContractError> {
         let admin = get_admin(&env);
         admin.require_auth();
 
-        let mut stream = load_stream(&env, stream_id);
+        let mut stream = load_stream(&env, stream_id)?;
 
         assert!(
             stream.status == StreamStatus::Active || stream.status == StreamStatus::Paused,
             "stream must be active or paused to cancel"
         );
 
-        let accrued = Self::calculate_accrued(env.clone(), stream_id);
+        let accrued = Self::calculate_accrued(env.clone(), stream_id)?;
         let unstreamed = stream.deposit_amount - accrued;
 
         if unstreamed > 0 {
@@ -694,6 +718,7 @@ impl FluxoraStream {
             (symbol_short!("cancelled"), stream_id),
             StreamEvent::Cancelled(stream_id),
         );
+        Ok(())
     }
 
     /// Pause a payment stream as the contract admin.
@@ -720,11 +745,11 @@ impl FluxoraStream {
     /// - Admin can pause any stream regardless of sender
     /// - Accrual continues based on time (pause doesn't stop time)
     /// - Recipient cannot withdraw while paused
-    pub fn pause_stream_as_admin(env: Env, stream_id: u64) {
+    pub fn pause_stream_as_admin(env: Env, stream_id: u64) -> Result<(), ContractError> {
         let admin = get_admin(&env);
         admin.require_auth();
 
-        let mut stream = load_stream(&env, stream_id);
+        let mut stream = load_stream(&env, stream_id)?;
 
         assert!(
             stream.status == StreamStatus::Active,
@@ -738,6 +763,7 @@ impl FluxoraStream {
             (symbol_short!("paused"), stream_id),
             StreamEvent::Paused(stream_id),
         );
+        Ok(())
     }
 
     /// Resume a paused payment stream as the contract admin.
@@ -764,9 +790,9 @@ impl FluxoraStream {
     /// - Admin can resume any paused stream regardless of sender
     /// - After resume, recipient can immediately withdraw accrued funds
     /// - Cannot resume completed or cancelled streams (terminal states)
-    pub fn resume_stream_as_admin(env: Env, stream_id: u64) {
+    pub fn resume_stream_as_admin(env: Env, stream_id: u64) -> Result<(), ContractError> {
         get_admin(&env).require_auth();
-        let mut stream = load_stream(&env, stream_id);
+        let mut stream = load_stream(&env, stream_id)?;
 
         assert!(
             stream.status == StreamStatus::Paused,
@@ -780,6 +806,7 @@ impl FluxoraStream {
             (symbol_short!("resumed"), stream_id),
             StreamEvent::Resumed(stream_id),
         );
+        Ok(())
     }
 }
 

@@ -248,10 +248,10 @@ fn full_lifecycle_create_withdraw_to_completion() {
 }
 
 #[test]
-#[should_panic(expected = "stream not found")]
 fn get_stream_state_unknown_id_panics() {
     let ctx = TestContext::setup();
-    ctx.client().get_stream_state(&99);
+    let result = ctx.client().try_get_stream_state(&99);
+    assert!(result.is_err());
 }
 
 #[test]
