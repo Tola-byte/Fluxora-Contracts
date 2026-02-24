@@ -2,7 +2,9 @@
 
 mod accrual;
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, token, Address, Env};
+use soroban_sdk::{
+    contract, contractimpl, contracttype, panic_with_error, symbol_short, token, Address, Env,
+};
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -30,6 +32,7 @@ pub enum StreamStatus {
 #[repr(u32)]
 pub enum ContractError {
     StreamNotFound = 1,
+    InvalidState = 2,
 }
 
 #[contracttype]
@@ -442,14 +445,14 @@ impl FluxoraStream {
     pub fn cancel_stream(env: Env, stream_id: u64) -> Result<(), ContractError> {
         let mut stream = load_stream(&env, stream_id)?;
         Self::require_sender_or_admin(&env, &stream.sender);
-
-        assert!(
-            stream.status == StreamStatus::Active || stream.status == StreamStatus::Paused,
-            "stream must be active or paused to cancel"
-        );
+        Self::require_cancellable_status(&env, stream.status);
 
         let accrued = Self::calculate_accrued(env.clone(), stream_id)?;
         let unstreamed = stream.deposit_amount - accrued;
+
+        // CEI: update state before external token transfer to reduce reentrancy risk.
+        stream.status = StreamStatus::Cancelled;
+        save_stream(&env, &stream);
 
         if unstreamed > 0 {
             let token_client = token::Client::new(&env, &get_token(&env));
@@ -536,6 +539,13 @@ impl FluxoraStream {
         let withdrawable = accrued - stream.withdrawn_amount;
         assert!(withdrawable > 0, "nothing to withdraw");
 
+        // CEI: update state before external token transfer to reduce reentrancy risk.
+        stream.withdrawn_amount += withdrawable;
+        if stream.withdrawn_amount == stream.deposit_amount {
+            stream.status = StreamStatus::Completed;
+        }
+        save_stream(&env, &stream);
+
         let token_client = token::Client::new(&env, &get_token(&env));
         token_client.transfer(
             &env.current_contract_address(),
@@ -543,14 +553,6 @@ impl FluxoraStream {
             &withdrawable,
         );
 
-        stream.withdrawn_amount += withdrawable;
-
-        // If the full deposit has been streamed and withdrawn, mark completed.
-        if stream.withdrawn_amount == stream.deposit_amount {
-            stream.status = StreamStatus::Completed;
-        }
-
-        save_stream(&env, &stream);
         env.events()
             .publish((symbol_short!("withdrew"), stream_id), withdrawable);
         Ok(withdrawable)
@@ -741,6 +743,12 @@ impl FluxoraStream {
         // Admin overrides are handled by the 'as_admin' specific functions.
         sender.require_auth();
     }
+
+    fn require_cancellable_status(env: &Env, status: StreamStatus) {
+        if status != StreamStatus::Active && status != StreamStatus::Paused {
+            panic_with_error!(env, ContractError::InvalidState);
+        }
+    }
 }
 
 #[contractimpl]
@@ -793,13 +801,14 @@ impl FluxoraStream {
         let accrued = Self::calculate_accrued(env.clone(), stream_id)?;
         let unstreamed = stream.deposit_amount - accrued;
 
+        // CEI: update state before external token transfer to reduce reentrancy risk.
+        stream.status = StreamStatus::Cancelled;
+        save_stream(&env, &stream);
+
         if unstreamed > 0 {
             let token_client = token::Client::new(&env, &get_token(&env));
             token_client.transfer(&env.current_contract_address(), &stream.sender, &unstreamed);
         }
-
-        stream.status = StreamStatus::Cancelled;
-        save_stream(&env, &stream);
 
         env.events().publish(
             (symbol_short!("cancelled"), stream_id),
