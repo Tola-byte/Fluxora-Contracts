@@ -173,6 +173,47 @@ impl<'a> TestContext<'a> {
 // ---------------------------------------------------------------------------
 
 #[test]
+fn test_init_stores_token_and_admin() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, FluxoraStream);
+    let client = FluxoraStreamClient::new(&env, &contract_id);
+
+    let token = Address::generate(&env);
+    let admin = Address::generate(&env);
+
+    client.init(&token, &admin);
+
+    let config = client.get_config();
+    assert_eq!(config.token, token);
+    assert_eq!(config.admin, admin);
+}
+
+#[test]
+#[should_panic(expected = "already initialised")]
+fn test_init_second_call_fails() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, FluxoraStream);
+    let client = FluxoraStreamClient::new(&env, &contract_id);
+
+    let token = Address::generate(&env);
+    let admin = Address::generate(&env);
+
+    client.init(&token, &admin);
+
+    client.init(&Address::generate(&env), &Address::generate(&env));
+}
+
+#[test]
+#[should_panic(expected = "contract not initialised: missing config")]
+fn test_get_config_before_init_fails() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, FluxoraStream);
+    let client = FluxoraStreamClient::new(&env, &contract_id);
+
+    client.get_config();
+}
+
+#[test]
 fn test_init_stores_config() {
     let env = Env::default();
     env.mock_all_auths();
