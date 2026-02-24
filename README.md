@@ -17,15 +17,43 @@ Implementation is scaffolded; storage, token transfers, and events are left for 
 - [soroban-sdk](https://docs.rs/soroban-sdk) (Stellar Soroban)
 - Build target: `wasm32-unknown-unknown` for deployment
 
+## Version pinning
+
+This project pins dependencies for **reproducible builds** and **auditor compatibility**:
+
+| Component | Version | Location | Purpose |
+|---|---|---|---|
+| **Rust** | 1.75 | `rust-toolchain.toml` | Ensures consistent WASM compilation |
+| **soroban-sdk** | 21.7.7 | `contracts/stream/Cargo.toml` | Locked to tested Stellar Soroban network version |
+
+When upgrading versions:
+
+1. Update `rust-toolchain.toml` → run `rustup update` → rebuild and test
+2. Update `soroban-sdk` version in Cargo.toml → update lock file → run full test suite
+3. Verify compatibility with the target Stellar network (testnet, mainnet, etc.)
+4. Document the change in the PR or release notes
+
 ## Local setup
 
 ### Prerequisites
 
-- Rust 1.70+
+- **Rust 1.75+** — Pinned in `rust-toolchain.toml` (auto-enforced via `rustup`; see [Rust version pinning](#rust-version-pinning))
+- **Soroban SDK 21.7.7** — Pinned in `contracts/stream/Cargo.toml` for reproducible builds
 - [Stellar CLI](https://developers.stellar.org/docs/tools/developer-tools) (optional, for deploy/test on network)
 
+Install dependencies:
+
 ```bash
+rustup update stable
 rustup target add wasm32-unknown-unknown
+```
+
+Then verify:
+
+```bash
+rustc --version       # Should show 1.75 or newer
+cargo --version
+stellar --version     # Only if installing Stellar CLI
 ```
 
 ### Build
