@@ -1468,6 +1468,72 @@ fn test_calculate_accrued_after_cliff() {
 }
 
 #[test]
+fn test_calculate_accrued_formula_before_cliff_returns_zero() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(100);
+
+    let stream_id = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &1_i128,
+        &100u64,
+        &200u64,
+        &600u64,
+    );
+
+    ctx.env.ledger().set_timestamp(199);
+    let accrued = ctx.client().calculate_accrued(&stream_id);
+    assert_eq!(accrued, 0, "accrued must be zero before cliff_time");
+}
+
+#[test]
+fn test_calculate_accrued_formula_after_cliff_uses_start_time_elapsed() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(100);
+
+    let stream_id = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &1_i128,
+        &100u64,
+        &200u64,
+        &600u64,
+    );
+
+    ctx.env.ledger().set_timestamp(250);
+    let accrued = ctx.client().calculate_accrued(&stream_id);
+    assert_eq!(
+        accrued, 150,
+        "after cliff, accrual must use (current_time - start_time)"
+    );
+}
+
+#[test]
+fn test_calculate_accrued_formula_after_end_time_caps_elapsed() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(100);
+
+    let stream_id = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &1_i128,
+        &100u64,
+        &200u64,
+        &600u64,
+    );
+
+    ctx.env.ledger().set_timestamp(900);
+    let accrued = ctx.client().calculate_accrued(&stream_id);
+    assert_eq!(
+        accrued, 500,
+        "after end_time, elapsed must be capped at end_time (600 - 100)"
+    );
+}
+
+#[test]
 fn test_accrued_after_cliff_before_end() {
     let ctx = TestContext::setup();
     ctx.env.ledger().set_timestamp(0);
