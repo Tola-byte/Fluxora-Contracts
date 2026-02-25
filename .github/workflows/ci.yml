@@ -82,6 +82,9 @@ jobs:
 
       - name: Install Stellar CLI
         uses: stellar/stellar-cli@v23.0.1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Optimize WASM
         run: |
@@ -204,6 +207,9 @@ jobs:
 
       - name: Install Stellar CLI
         uses: stellar/stellar-cli@v23.0.1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Configure testnet identity
         env:
@@ -258,6 +264,9 @@ jobs:
 
       - name: Install Stellar CLI
         uses: stellar/stellar-cli@v23.0.1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Configure mainnet identity
         env:
