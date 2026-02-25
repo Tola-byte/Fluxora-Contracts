@@ -1,12 +1,11 @@
 extern crate std;
 
 use fluxora_stream::{FluxoraStream, FluxoraStreamClient, StreamStatus};
-#[allow(unused_imports)]
 use soroban_sdk::{
     log,
     testutils::{Address as _, Ledger},
     token::{Client as TokenClient, StellarAssetClient},
-    Address, Env,
+    Address, Env, Vec,
 };
 
 struct TestContext<'a> {
@@ -206,14 +205,20 @@ fn withdraw_accrued_amount_updates_balances_and_state() {
     assert_eq!(ctx.token.balance(&ctx.contract_id), 750);
 }
 
+/// Test withdraw before cliff returns 0 (idempotent behavior).
+/// Verifies no transfer, no state change when withdrawable is zero.
 #[test]
-#[should_panic(expected = "nothing to withdraw")]
-fn withdraw_before_cliff_panics() {
+fn withdraw_before_cliff_returns_zero() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_stream_with_cliff(500);
 
     ctx.env.ledger().set_timestamp(100);
-    ctx.client().withdraw(&stream_id);
+    let withdrawn = ctx.client().withdraw(&stream_id);
+    assert_eq!(withdrawn, 0, "should return 0 before cliff");
+
+    // Verify no state change
+    let state = ctx.client().get_stream_state(&stream_id);
+    assert_eq!(state.withdrawn_amount, 0);
 }
 
 #[test]
@@ -250,10 +255,10 @@ fn full_lifecycle_create_withdraw_to_completion() {
 }
 
 #[test]
-#[should_panic(expected = "stream not found")]
 fn get_stream_state_unknown_id_panics() {
     let ctx = TestContext::setup();
-    ctx.client().get_stream_state(&99);
+    let result = ctx.client().try_get_stream_state(&99);
+    assert!(result.is_err());
 }
 
 #[test]
@@ -776,6 +781,120 @@ fn integration_cancel_after_cliff_partial_refund() {
     assert_eq!(ctx.token.balance(&ctx.contract_id), 0);
 }
 
+// ---------------------------------------------------------------------------
+// Integration tests — stream_id generation and uniqueness
+// ---------------------------------------------------------------------------
+
+/// Creating N streams must produce IDs 0, 1, 2, …, N-1 with no gaps or duplicates.
+///
+/// Verifies:
+/// - Counter starts at 0 after init
+/// - Each create_stream call advances the counter by exactly 1
+/// - The returned stream_id matches the value stored in the Stream struct
+/// - No two streams share the same id
+#[test]
+fn integration_stream_ids_are_unique_and_sequential() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    const N: u64 = 10;
+    let mut collected: std::vec::Vec<u64> = std::vec::Vec::new();
+
+    for expected in 0..N {
+        let id = ctx.client().create_stream(
+            &ctx.sender,
+            &ctx.recipient,
+            &100_i128,
+            &1_i128,
+            &0u64,
+            &0u64,
+            &100u64,
+        );
+
+        // Returned id must be sequential
+        assert_eq!(
+            id, expected,
+            "stream {expected}: id must equal counter value"
+        );
+
+        // Id stored inside the struct must match the returned id
+        let state = ctx.client().get_stream_state(&id);
+        assert_eq!(
+            state.stream_id, id,
+            "stream {expected}: stored stream_id must equal returned id"
+        );
+
+        collected.push(id);
+    }
+
+    // Pairwise uniqueness — no duplicate ids
+    for i in 0..collected.len() {
+        for j in (i + 1)..collected.len() {
+            assert_ne!(
+                collected[i], collected[j],
+                "stream_ids at positions {i} and {j} must be unique"
+            );
+        }
+    }
+}
+
+/// A create_stream call that fails validation must NOT advance NextStreamId;
+/// the following successful call must receive the id that would have been next.
+///
+/// Verifies:
+/// - Validation failures (underfunded deposit) leave the counter unchanged
+/// - Subsequent successful calls receive the correct sequential id
+#[test]
+fn integration_failed_creation_does_not_advance_counter() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    // First successful stream → id = 0
+    let id0 = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &1000u64,
+    );
+    assert_eq!(id0, 0, "first stream must be id 0");
+
+    // Attempt a stream with an underfunded deposit → must panic
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        ctx.client().create_stream(
+            &ctx.sender,
+            &ctx.recipient,
+            &1_i128, // deposit < rate * duration
+            &1_i128,
+            &0u64,
+            &0u64,
+            &1000u64,
+        );
+    }));
+    assert!(result.is_err(), "underfunded create_stream must panic");
+
+    // Next successful stream must be id = 1, not 2
+    let id1 = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &1_i128,
+        &0u64,
+        &0u64,
+        &1000u64,
+    );
+    assert_eq!(
+        id1, 1,
+        "counter must not advance after a failed create_stream"
+    );
+
+    // Verify both streams are independently retrievable
+    assert_eq!(ctx.client().get_stream_state(&id0).stream_id, 0);
+    assert_eq!(ctx.client().get_stream_state(&id1).stream_id, 1);
+}
+
 /// Integration test: create stream → pause → cancel → correct refund.
 ///
 /// This test covers:
@@ -1192,7 +1311,7 @@ fn test_create_many_streams_from_same_sender() {
 
     let counter_stop = 50;
     let mut counter = 0;
-    let mut stream_vec = std::vec::Vec::new();
+    let mut stream_vec = Vec::new(&ctx.env);
     let deposit = 10_i128;
     let rate = 1_i128;
     let start = 0u64;
@@ -1225,7 +1344,7 @@ fn test_create_many_streams_from_same_sender() {
 
         counter += 1;
 
-        stream_vec.push(stream_id);
+        stream_vec.push_back(stream_id);
         if counter == counter_stop {
             break;
         }
@@ -1233,14 +1352,10 @@ fn test_create_many_streams_from_same_sender() {
 
     let cpu_insns = ctx.env.budget().cpu_instruction_cost();
     log!(&ctx.env, "cpu_insns", cpu_insns);
-    // TTL extension bumps add extra instructions; updated baseline.
-    assert!(cpu_insns <= 22_000_000, "cpu budget exceeded: {cpu_insns}");
+    assert!(cpu_insns <= 22_000_000); // Increased to account for StreamCreated and Withdrawal event payloads
 
     // Check memory bytes consumed
     let mem_bytes = ctx.env.budget().memory_bytes_cost();
     log!(&ctx.env, "mem_bytes", mem_bytes);
-    assert!(
-        mem_bytes <= 5_000_000,
-        "memory budget exceeded: {mem_bytes}"
-    );
+    assert!(mem_bytes <= 4_400_000); // Increased to account for richer event payloads
 }

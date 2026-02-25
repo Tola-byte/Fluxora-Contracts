@@ -81,10 +81,11 @@ jobs:
         run: cargo build --release -p fluxora_stream --target wasm32-unknown-unknown
 
       - name: Install Stellar CLI
-        uses: stellar/stellar-cli@v23.0.1
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/stellar/stellar-cli/main/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Optimize WASM
         run: |
@@ -152,16 +153,10 @@ jobs:
             ${{ runner.os }}-cargo-coverage-
 
       - name: Install cargo-tarpaulin
-        uses: taiki-e/install-action@cargo-tarpaulin
-        continue-on-error: true
+        run: cargo install cargo-tarpaulin
 
       - name: Generate coverage report
         run: |
-          if ! cargo tarpaulin --version >/dev/null 2>&1; then
-            echo "::warning::cargo-tarpaulin is unavailable; skipping coverage generation."
-            exit 0
-          fi
-
           cargo tarpaulin \
             --features testutils \
             --out Xml \
@@ -206,10 +201,11 @@ jobs:
           path: ./artifacts
 
       - name: Install Stellar CLI
-        uses: stellar/stellar-cli@v23.0.1
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/stellar/stellar-cli/main/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Configure testnet identity
         env:
@@ -263,10 +259,11 @@ jobs:
           path: ./artifacts
 
       - name: Install Stellar CLI
-        uses: stellar/stellar-cli@v23.0.1
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/stellar/stellar-cli/main/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Configure mainnet identity
         env:
