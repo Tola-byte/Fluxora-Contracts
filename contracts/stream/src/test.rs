@@ -1137,6 +1137,36 @@ fn test_calculate_accrued_formula_after_end_time_caps_elapsed() {
 
 #[test]
 fn test_accrued_after_cliff_before_end() {
+    let ctx = TestContext::setup();
+    ctx.env.ledger().set_timestamp(0);
+
+    let stream_id = ctx.client().create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &10000_i128,
+        &10_i128,
+        &0u64,
+        &500u64,
+        &1000u64,
+    );
+
+    ctx.env.ledger().set_timestamp(500);
+    assert_eq!(ctx.client().calculate_accrued(&stream_id), 5000);
+
+    ctx.env.ledger().set_timestamp(750);
+    assert_eq!(ctx.client().calculate_accrued(&stream_id), 7500);
+
+    ctx.env.ledger().set_timestamp(999);
+    assert_eq!(ctx.client().calculate_accrued(&stream_id), 9990);
+
+    ctx.env.ledger().set_timestamp(1000);
+    assert_eq!(ctx.client().calculate_accrued(&stream_id), 10000);
+
+    ctx.env.ledger().set_timestamp(1500);
+    assert_eq!(ctx.client().calculate_accrued(&stream_id), 10000);
+}
+
+#[test]
 fn test_withdraw_completed_in_batch() {
     let ctx = TestContext::setup();
     let stream_id = ctx.create_default_stream();
