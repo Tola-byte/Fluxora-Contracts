@@ -744,9 +744,7 @@ impl FluxoraStream {
         }
 
         let now = if stream.status == StreamStatus::Cancelled {
-            stream
-                .cancelled_at
-                .ok_or(ContractError::InvalidState)?
+            stream.cancelled_at.ok_or(ContractError::InvalidState)?
         } else {
             env.ledger().timestamp()
         };
