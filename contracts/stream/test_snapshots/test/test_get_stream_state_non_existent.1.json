@@ -736,16 +736,18 @@
           "v0": {
             "topics": [
               {
-                "symbol": "fn_return"
-              },
-              {
-                "symbol": "get_stream_state"
+                "symbol": "log"
               }
             ],
             "data": {
-              "error": {
-                "contract": 1
-              }
+              "vec": [
+                {
+                  "string": "caught panic 'stream not found' from contract function 'Symbol(obj#169)'"
+                },
+                {
+                  "u64": 999
+                }
+              ]
             }
           }
         }
@@ -765,12 +767,12 @@
               },
               {
                 "error": {
-                  "contract": 1
+                  "wasm_vm": "invalid_action"
                 }
               }
             ],
             "data": {
-              "string": "escalating Ok(ScErrorType::Contract) frame-exit to Err"
+              "string": "caught error from function"
             }
           }
         }
@@ -790,7 +792,7 @@
               },
               {
                 "error": {
-                  "contract": 1
+                  "wasm_vm": "invalid_action"
                 }
               }
             ],
@@ -829,7 +831,7 @@
               },
               {
                 "error": {
-                  "contract": 1
+                  "wasm_vm": "invalid_action"
                 }
               }
             ],
